@@ -6,6 +6,7 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
 import {
+  type ChatAttachment,
   initialConversations,
   type ChatMessage,
   type Conversation,
@@ -14,6 +15,45 @@ import { ChatComposer } from "./chat-composer"
 import { ChatMessageList } from "./chat-message-list"
 import { ChatSidebar } from "./chat-sidebar"
 
+type ModelMessagePart =
+  | { type: "text"; text: string }
+  | { type: "file"; data: string; mediaType: string; filename?: string }
+
+type ChatRequestMessage = {
+  role: "user" | "assistant"
+  content: string | ModelMessagePart[]
+}
+
+function toRequestMessage(message: ChatMessage): ChatRequestMessage {
+  if (!message.image) {
+    return {
+      role: message.role,
+      content: message.content,
+    }
+  }
+
+  const parts: ModelMessagePart[] = [
+    {
+      type: "file",
+      data: message.image.dataUrl,
+      mediaType: message.image.mimeType,
+      filename: message.image.name,
+    },
+  ]
+
+  if (message.content.trim()) {
+    parts.push({
+      type: "text",
+      text: message.content,
+    })
+  }
+
+  return {
+    role: message.role,
+    content: parts,
+  }
+}
+
 function ChatShell() {
   const [conversations, setConversations] = React.useState(initialConversations)
   const [activeConversationId, setActiveConversationId] = React.useState(
@@ -21,7 +61,10 @@ function ChatShell() {
   )
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [draft, setDraft] = React.useState("")
+  const [selectedImage, setSelectedImage] = React.useState<ChatAttachment | null>(null)
+  const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
   const [isSending, setIsSending] = React.useState(false)
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId
@@ -59,28 +102,14 @@ function ChatShell() {
     setSidebarOpen(false)
   }, [])
 
-  const createAssistantReply = React.useCallback((prompt: string) => {
-    const normalizedPrompt = prompt.toLowerCase()
-
-    if (normalizedPrompt.includes("roadmap") || normalizedPrompt.includes("phase")) {
-      return "For Phase 1, keep the scope tight: reusable layout, mock state, responsive navigation, and polished presentation."
-    }
-
-    if (normalizedPrompt.includes("mobile") || normalizedPrompt.includes("responsive")) {
-      return "A mobile-first sidebar overlay and a sticky composer keep the experience usable on smaller screens."
-    }
-
-    if (normalizedPrompt.includes("theme") || normalizedPrompt.includes("dark")) {
-      return "A single theme provider can switch the whole shell without adding any backend dependency."
-    }
-
-    return "That works. This mock response is here so you can see the message flow before any AI integration is added."
-  }, [])
-
   const handleSend = React.useCallback(() => {
     const trimmed = draft.trim()
 
-    if (!trimmed || !activeConversation) {
+    if ((!trimmed && !selectedImage) || !activeConversation) {
+      return
+    }
+
+    if (isSending) {
       return
     }
 
@@ -88,43 +117,125 @@ function ChatShell() {
       id: `msg-${Date.now()}`,
       role: "user",
       content: trimmed,
+      image: selectedImage ?? undefined,
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
     }
 
-    const assistantMessage: ChatMessage = {
-      id: `msg-${Date.now() + 1}`,
+    const assistantMessageId = `msg-${Date.now() + 1}`
+    const assistantPlaceholder: ChatMessage = {
+      id: assistantMessageId,
       role: "assistant",
-      content: createAssistantReply(trimmed),
-      time: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      content: "",
+      time: "Generating...",
+      status: "streaming",
     }
+
+    const requestMessages = [...activeConversation.messages, userMessage].map(
+      toRequestMessage
+    )
 
     setIsSending(true)
     setDraft("")
+    setErrorMessage(null)
+    setAttachmentError(null)
+    setSelectedImage(null)
 
     updateConversation(activeConversation.id, (conversation) => ({
       ...conversation,
-      title: conversation.title === "New chat" ? trimmed.slice(0, 42) : conversation.title,
-      preview: trimmed,
+      title:
+        conversation.title === "New chat"
+          ? (trimmed || "Image message").slice(0, 42)
+          : conversation.title,
+      preview: trimmed || (selectedImage ? "Image attached" : trimmed),
       updatedAt: "Just now",
-      messages: [...conversation.messages, userMessage],
+      messages: [...conversation.messages, userMessage, assistantPlaceholder],
     }))
 
-    window.setTimeout(() => {
-      updateConversation(activeConversation.id, (conversation) => ({
-        ...conversation,
-        preview: assistantMessage.content,
-        updatedAt: "Just now",
-        messages: [...conversation.messages, assistantMessage],
-      }))
-      setIsSending(false)
-    }, 650)
-  }, [activeConversation, createAssistantReply, draft, updateConversation])
+    void (async () => {
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ messages: requestMessages }),
+        })
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Request failed with status ${response.status}`)
+        }
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let assistantContent = ""
+
+        while (true) {
+          const { value, done } = await reader.read()
+
+          if (done) {
+            break
+          }
+
+          assistantContent += decoder.decode(value, { stream: true })
+
+          updateConversation(activeConversation.id, (conversation) => ({
+            ...conversation,
+            preview: assistantContent || "Generating response...",
+            updatedAt: "Just now",
+            messages: conversation.messages.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    content: assistantContent,
+                    status: "streaming",
+                  }
+                : message
+            ),
+          }))
+        }
+
+        assistantContent += decoder.decode()
+
+        updateConversation(activeConversation.id, (conversation) => ({
+          ...conversation,
+          preview: assistantContent,
+          updatedAt: "Just now",
+          messages: conversation.messages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: assistantContent,
+                }
+              : message
+          ),
+        }))
+      } catch {
+        const fallbackMessage =
+          "I hit an error while generating a response. Please try again."
+
+        setErrorMessage(fallbackMessage)
+        updateConversation(activeConversation.id, (conversation) => ({
+          ...conversation,
+          preview: fallbackMessage,
+          updatedAt: "Just now",
+          messages: conversation.messages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: fallbackMessage,
+                  status: undefined,
+                }
+              : message
+          ),
+        }))
+      } finally {
+        setIsSending(false)
+      }
+    })()
+  }, [activeConversation, draft, isSending, selectedImage, updateConversation])
 
   const handlePromptSelect = React.useCallback(
     (prompt: string) => {
@@ -199,12 +310,22 @@ function ChatShell() {
               />
             </section>
 
+            {errorMessage ? (
+              <div className="rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {errorMessage}
+              </div>
+            ) : null}
+
             <section className="pb-1">
               <ChatComposer
                 value={draft}
                 onChange={setDraft}
                 onSubmit={handleSend}
                 isSending={isSending}
+                attachment={selectedImage}
+                attachmentError={attachmentError}
+                onAttachmentChange={setSelectedImage}
+                onAttachmentError={setAttachmentError}
               />
             </section>
           </div>

@@ -1,10 +1,18 @@
 type ChatRole = "user" | "assistant"
 
+type ChatAttachment = {
+  name: string
+  dataUrl: string
+  mimeType: string
+}
+
 type ChatMessage = {
   id: string
   role: ChatRole
   content: string
   time: string
+  image?: ChatAttachment
+  status?: "streaming"
 }
 
 type Conversation = {
@@ -96,5 +104,5 @@ const initialConversations: Conversation[] = [
   },
 ]
 
-export type { ChatMessage, ChatRole, Conversation }
+export type { ChatAttachment, ChatMessage, ChatRole, Conversation }
 export { initialConversations, suggestedPrompts }

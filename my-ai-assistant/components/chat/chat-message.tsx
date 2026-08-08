@@ -3,13 +3,25 @@
 import { Bot, Sparkles } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ChatImagePreview } from "./chat-image-preview"
 import type { ChatMessage as ChatMessageType } from "./mock-data"
 
 function UserMessage({ message }: { message: ChatMessageType }) {
   return (
     <div className="flex items-end justify-end gap-3">
       <div className="max-w-[min(100%,42rem)] rounded-[28px] rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground shadow-lg shadow-black/10">
-        <p className="whitespace-pre-wrap">{message.content}</p>
+        <div className="space-y-3">
+          {message.image ? (
+            <ChatImagePreview
+              src={message.image.dataUrl}
+              alt={message.image.name}
+              title={message.image.name}
+            />
+          ) : null}
+          {message.content ? (
+            <p className="whitespace-pre-wrap">{message.content}</p>
+          ) : null}
+        </div>
         <p className="mt-2 text-right text-[11px] text-primary-foreground/70">
           {message.time}
         </p>
@@ -36,8 +48,16 @@ function AssistantMessage({ message }: { message: ChatMessageType }) {
           <Sparkles className="size-3.5" />
           Assistant
         </div>
+        {message.status === "streaming" && !message.content ? (
+          <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="size-2 animate-pulse rounded-full bg-primary" />
+            Generating response...
+          </div>
+        ) : null}
         <p className="whitespace-pre-wrap text-foreground">{message.content}</p>
-        <p className="mt-2 text-[11px] text-muted-foreground">{message.time}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          {message.status === "streaming" ? "Generating..." : message.time}
+        </p>
       </div>
     </div>
   )
