@@ -6,29 +6,11 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { ChatImagePreview } from "./chat-image-preview"
+import { ChatAttachmentPreview } from "./chat-image-preview"
 import type { ChatAttachment } from "./mock-data"
 
-const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"]
-const maxImageSizeBytes = 8 * 1024 * 1024
-
-async function fileToDataUrl(file: File) {
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-        return
-      }
-
-      reject(new Error("Unable to read image file."))
-    }
-
-    reader.onerror = () => reject(new Error("Unable to read image file."))
-    reader.readAsDataURL(file)
-  })
-}
+const allowedFileTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"]
+const maxAttachmentSizeBytes = 20 * 1024 * 1024
 
 function ChatComposer({
   value,
@@ -37,8 +19,10 @@ function ChatComposer({
   isSending,
   attachment,
   attachmentError,
-  onAttachmentChange,
+  isUploadingAttachment,
+  onAttachmentSelected,
   onAttachmentError,
+  onAttachmentRemoved,
 }: {
   value: string
   onChange: (value: string) => void
@@ -46,8 +30,10 @@ function ChatComposer({
   isSending: boolean
   attachment: ChatAttachment | null
   attachmentError: string | null
-  onAttachmentChange: (attachment: ChatAttachment | null) => void
+  isUploadingAttachment: boolean
+  onAttachmentSelected: (file: File) => void
   onAttachmentError: (error: string | null) => void
+  onAttachmentRemoved: () => void
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
@@ -65,32 +51,47 @@ function ChatComposer({
       return
     }
 
-    if (!allowedImageTypes.includes(file.type)) {
-      onAttachmentError("Only JPG, JPEG, PNG, and WEBP files are supported.")
+    if (!allowedFileTypes.includes(file.type)) {
+      onAttachmentError("Only JPG, JPEG, PNG, WEBP, and PDF files are supported.")
       event.target.value = ""
       return
     }
 
-    if (file.size > maxImageSizeBytes) {
-      onAttachmentError("Images must be smaller than 8 MB.")
+    if (file.size > maxAttachmentSizeBytes) {
+      onAttachmentError("Files must be smaller than 20 MB.")
       event.target.value = ""
       return
     }
 
-    try {
-      const dataUrl = await fileToDataUrl(file)
-      onAttachmentChange({
-        name: file.name,
-        dataUrl,
-        mimeType: file.type,
-      })
-      onAttachmentError(null)
-    } catch {
-      onAttachmentError("Could not read that image. Please try another file.")
-    } finally {
-      event.target.value = ""
-    }
+    onAttachmentError(null)
+    onAttachmentSelected(file)
+    event.target.value = ""
   }
+
+  const statusMessage = attachment
+    ? attachment.kind === "pdf"
+      ? attachment.status === "processing"
+        ? "Processing..."
+        : attachment.status === "error"
+          ? attachment.errorMessage ?? "Upload failed"
+          : `Ready${attachment.pageCount ? ` · ${attachment.pageCount} pages` : ""}`
+      : "Image ready"
+    : null
+
+  const canSend = Boolean(value.trim()) || attachment?.kind === "image"
+
+  const removeAttachment = () => {
+    onAttachmentRemoved()
+    onAttachmentError(null)
+  }
+
+  const allowSend = canSend && !isUploadingAttachment
+
+  React.useEffect(() => {
+    if (!attachment && attachmentError) {
+      onAttachmentError(null)
+    }
+  }, [attachment, attachmentError, onAttachmentError])
 
   React.useEffect(() => {
     const textarea = textareaRef.current
@@ -107,14 +108,14 @@ function ChatComposer({
     <div className="rounded-[32px] border border-border/70 bg-background/85 p-3 shadow-lg shadow-black/5 backdrop-blur-xl sm:p-4">
       <div className="flex flex-col gap-3">
         {attachment ? (
-          <ChatImagePreview
+          <ChatAttachmentPreview
+            kind={attachment.kind}
             src={attachment.dataUrl}
             alt={attachment.name}
             title={attachment.name}
-            onRemove={() => {
-              onAttachmentChange(null)
-              onAttachmentError(null)
-            }}
+            status={attachment.status}
+            statusMessage={statusMessage ?? undefined}
+            onRemove={removeAttachment}
           />
         ) : null}
 
@@ -144,7 +145,7 @@ function ChatComposer({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,application/pdf"
           className="hidden"
           onChange={handleFileChange}
         />
@@ -158,7 +159,7 @@ function ChatComposer({
               className="rounded-full border-border/70 bg-background/80"
               aria-label="Attach file"
               onClick={handleFileClick}
-              disabled={isSending}
+              disabled={isSending || isUploadingAttachment}
             >
               <Paperclip className="size-4" />
             </Button>
@@ -168,7 +169,7 @@ function ChatComposer({
               size="icon-sm"
               className="rounded-full border-border/70 bg-background/80"
               aria-label="Use microphone"
-              disabled={isSending}
+              disabled={isSending || isUploadingAttachment}
             >
               <Mic className="size-4" />
             </Button>
@@ -177,11 +178,11 @@ function ChatComposer({
           <Button
             type="button"
             onClick={onSubmit}
-            disabled={isSending || (!value.trim() && !attachment)}
+            disabled={isSending || isUploadingAttachment || !allowSend}
             className="min-w-24 rounded-full px-5"
           >
             <SendHorizonal className="size-4" />
-            {isSending ? "Sending" : "Send"}
+            {isSending ? "Sending" : isUploadingAttachment ? "Processing" : "Send"}
           </Button>
         </div>
       </div>

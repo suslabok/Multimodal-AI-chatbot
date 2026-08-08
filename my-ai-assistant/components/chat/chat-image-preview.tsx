@@ -20,7 +20,6 @@ function ChatAttachmentPreview({
   src,
   alt,
   title,
-  status,
   statusMessage,
   onRemove,
 }: ChatAttachmentPreviewProps) {

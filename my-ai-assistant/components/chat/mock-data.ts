@@ -1,9 +1,15 @@
 type ChatRole = "user" | "assistant"
 
 type ChatAttachment = {
+  id: string
+  kind: "image" | "pdf"
+  status: "processing" | "ready" | "error"
   name: string
-  dataUrl: string
   mimeType: string
+  dataUrl?: string
+  documentId?: string
+  pageCount?: number
+  errorMessage?: string
 }
 
 type ChatMessage = {
@@ -11,7 +17,7 @@ type ChatMessage = {
   role: ChatRole
   content: string
   time: string
-  image?: ChatAttachment
+  attachment?: ChatAttachment
   status?: "streaming"
 }
 

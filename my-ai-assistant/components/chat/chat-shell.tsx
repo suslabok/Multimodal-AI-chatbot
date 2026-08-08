@@ -24,33 +24,38 @@ type ChatRequestMessage = {
   content: string | ModelMessagePart[]
 }
 
-function toRequestMessage(message: ChatMessage): ChatRequestMessage {
-  if (!message.image) {
-    return {
-      role: message.role,
-      content: message.content,
-    }
+function toRequestMessage(message: ChatMessage): ChatRequestMessage | null {
+  const attachment = message.attachment
+  const contentParts: ModelMessagePart[] = []
+
+  if (attachment?.kind === "image" && attachment.dataUrl) {
+    contentParts.push({
+      type: "file",
+      data: attachment.dataUrl,
+      mediaType: attachment.mimeType,
+      filename: attachment.name,
+    })
   }
 
-  const parts: ModelMessagePart[] = [
-    {
-      type: "file",
-      data: message.image.dataUrl,
-      mediaType: message.image.mimeType,
-      filename: message.image.name,
-    },
-  ]
+  const trimmedContent = message.content.trim()
 
-  if (message.content.trim()) {
-    parts.push({
+  if (trimmedContent) {
+    contentParts.push({
       type: "text",
-      text: message.content,
+      text: trimmedContent,
     })
+  }
+
+  if (contentParts.length === 0) {
+    return null
   }
 
   return {
     role: message.role,
-    content: parts,
+    content:
+      contentParts.length === 1 && contentParts[0]?.type === "text"
+        ? contentParts[0].text
+        : contentParts,
   }
 }
 
@@ -61,14 +66,34 @@ function ChatShell() {
   )
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [draft, setDraft] = React.useState("")
-  const [selectedImage, setSelectedImage] = React.useState<ChatAttachment | null>(null)
+  const [selectedAttachment, setSelectedAttachment] = React.useState<ChatAttachment | null>(null)
   const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
+  const [isUploadingAttachment, setIsUploadingAttachment] = React.useState(false)
   const [isSending, setIsSending] = React.useState(false)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
+  const attachmentUploadSession = React.useRef(0)
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId
   )
+
+  const fileToDataUrl = React.useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result)
+          return
+        }
+
+        reject(new Error("Unable to read the selected file."))
+      }
+
+      reader.onerror = () => reject(new Error("Unable to read the selected file."))
+      reader.readAsDataURL(file)
+    })
+  }, [])
 
   const updateConversation = React.useCallback(
     (conversationId: string, updater: (conversation: Conversation) => Conversation) => {
@@ -94,22 +119,184 @@ function ChatShell() {
     setConversations((current) => [newConversation, ...current])
     setActiveConversationId(id)
     setDraft("")
+    setSelectedAttachment(null)
+    setAttachmentError(null)
+    setIsUploadingAttachment(false)
     setSidebarOpen(false)
   }, [])
 
   const handleSelectConversation = React.useCallback((conversationId: string) => {
     setActiveConversationId(conversationId)
+    setSelectedAttachment(null)
+    setAttachmentError(null)
+    setIsUploadingAttachment(false)
     setSidebarOpen(false)
   }, [])
+
+  const handleAttachmentRemoved = React.useCallback(() => {
+    attachmentUploadSession.current += 1
+    setSelectedAttachment(null)
+    setAttachmentError(null)
+    setIsUploadingAttachment(false)
+  }, [])
+
+  const handleAttachmentSelected = React.useCallback(
+    async (file: File) => {
+      const attachmentId = crypto.randomUUID()
+      attachmentUploadSession.current += 1
+
+      if (file.type.startsWith("image/")) {
+        try {
+          const dataUrl = await fileToDataUrl(file)
+          setSelectedAttachment({
+            id: attachmentId,
+            kind: "image",
+            status: "ready",
+            name: file.name,
+            mimeType: file.type,
+            dataUrl,
+          })
+          setAttachmentError(null)
+        } catch {
+          setAttachmentError("Could not read that image. Please try another file.")
+        }
+
+        return
+      }
+
+      if (file.type === "application/pdf") {
+        const uploadSession = attachmentUploadSession.current
+        const pdfAttachment: ChatAttachment = {
+          id: attachmentId,
+          kind: "pdf",
+          status: "processing",
+          name: file.name,
+          mimeType: file.type,
+          pageCount: undefined,
+        }
+
+        setSelectedAttachment(pdfAttachment)
+        setIsUploadingAttachment(true)
+        setAttachmentError(null)
+
+        const uploadedMessageId = `msg-${Date.now()}`
+        const now = new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+
+        updateConversation(activeConversationId, (conversation) => ({
+          ...conversation,
+          messages: [
+            ...conversation.messages,
+            {
+              id: uploadedMessageId,
+              role: "user",
+              content: "",
+              attachment: pdfAttachment,
+              time: now,
+            },
+          ],
+        }))
+
+        try {
+          const formData = new FormData()
+          formData.append("file", file)
+          formData.append("conversationId", activeConversationId)
+
+          const response = await fetch("/api/documents/upload", {
+            method: "POST",
+            body: formData,
+          })
+
+          const result = (await response.json().catch(() => ({}))) as {
+            uploadedFile?: {
+              id: string
+              pageCount?: number | null
+              originalName: string
+              status: string
+            }
+            error?: string
+          }
+
+          if (!response.ok || !result.uploadedFile) {
+            throw new Error(result.error ?? "Unable to upload this PDF right now.")
+          }
+
+          if (attachmentUploadSession.current !== uploadSession) {
+            return
+          }
+
+          const readyAttachment: ChatAttachment = {
+            ...pdfAttachment,
+            status: "ready",
+            documentId: result.uploadedFile.id,
+            pageCount: result.uploadedFile.pageCount ?? undefined,
+          }
+
+          setSelectedAttachment(readyAttachment)
+          setIsUploadingAttachment(false)
+
+          updateConversation(activeConversationId, (conversation) => ({
+            ...conversation,
+            messages: conversation.messages.map((message) =>
+              message.id === uploadedMessageId
+                ? {
+                    ...message,
+                    attachment: readyAttachment,
+                  }
+                : message
+            ),
+          }))
+        } catch (error) {
+          if (attachmentUploadSession.current !== uploadSession) {
+            return
+          }
+
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : "Unable to upload this PDF right now."
+
+          const failedAttachment: ChatAttachment = {
+            ...pdfAttachment,
+            status: "error",
+            errorMessage,
+          }
+
+          setSelectedAttachment(failedAttachment)
+          setAttachmentError(errorMessage)
+          setIsUploadingAttachment(false)
+
+          updateConversation(activeConversationId, (conversation) => ({
+            ...conversation,
+            messages: conversation.messages.map((message) =>
+              message.id === uploadedMessageId
+                ? {
+                    ...message,
+                    attachment: failedAttachment,
+                }
+                : message
+            ),
+          }))
+        }
+
+        return
+      }
+
+      setAttachmentError("Only JPG, JPEG, PNG, WEBP, and PDF files are supported.")
+    },
+    [activeConversationId, fileToDataUrl, updateConversation]
+  )
 
   const handleSend = React.useCallback(() => {
     const trimmed = draft.trim()
 
-    if ((!trimmed && !selectedImage) || !activeConversation) {
+    if ((!trimmed && selectedAttachment?.kind !== "image") || !activeConversation) {
       return
     }
 
-    if (isSending) {
+    if (isSending || isUploadingAttachment) {
       return
     }
 
@@ -117,7 +304,8 @@ function ChatShell() {
       id: `msg-${Date.now()}`,
       role: "user",
       content: trimmed,
-      image: selectedImage ?? undefined,
+      attachment:
+        selectedAttachment?.kind === "image" ? selectedAttachment : undefined,
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -133,15 +321,17 @@ function ChatShell() {
       status: "streaming",
     }
 
-    const requestMessages = [...activeConversation.messages, userMessage].map(
-      toRequestMessage
-    )
+    const requestMessages = [...activeConversation.messages, userMessage]
+      .map(toRequestMessage)
+      .filter((message): message is ChatRequestMessage => message !== null)
 
     setIsSending(true)
     setDraft("")
     setErrorMessage(null)
     setAttachmentError(null)
-    setSelectedImage(null)
+    if (selectedAttachment?.kind === "image") {
+      setSelectedAttachment(null)
+    }
 
     updateConversation(activeConversation.id, (conversation) => ({
       ...conversation,
@@ -149,7 +339,13 @@ function ChatShell() {
         conversation.title === "New chat"
           ? (trimmed || "Image message").slice(0, 42)
           : conversation.title,
-      preview: trimmed || (selectedImage ? "Image attached" : trimmed),
+      preview:
+        trimmed ||
+        (selectedAttachment?.kind === "image"
+          ? "Image attached"
+          : selectedAttachment?.kind === "pdf"
+            ? "PDF attached"
+            : trimmed),
       updatedAt: "Just now",
       messages: [...conversation.messages, userMessage, assistantPlaceholder],
     }))
@@ -161,7 +357,10 @@ function ChatShell() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ messages: requestMessages }),
+          body: JSON.stringify({
+            conversationId: activeConversation.id,
+            messages: requestMessages,
+          }),
         })
 
         if (!response.ok || !response.body) {
@@ -235,7 +434,7 @@ function ChatShell() {
         setIsSending(false)
       }
     })()
-  }, [activeConversation, draft, isSending, selectedImage, updateConversation])
+  }, [activeConversation, draft, isSending, isUploadingAttachment, selectedAttachment, updateConversation])
 
   const handlePromptSelect = React.useCallback(
     (prompt: string) => {
@@ -322,10 +521,12 @@ function ChatShell() {
                 onChange={setDraft}
                 onSubmit={handleSend}
                 isSending={isSending}
-                attachment={selectedImage}
+                attachment={selectedAttachment}
                 attachmentError={attachmentError}
-                onAttachmentChange={setSelectedImage}
+                isUploadingAttachment={isUploadingAttachment}
+                onAttachmentSelected={handleAttachmentSelected}
                 onAttachmentError={setAttachmentError}
+                onAttachmentRemoved={handleAttachmentRemoved}
               />
             </section>
           </div>

@@ -33,7 +33,7 @@ function chunkExtractedPdfPages(pages: ExtractedPdfPage[]) {
   pages.forEach((page) => {
     const pageChunks = chunkPageText(page.text)
 
-    pageChunks.forEach((chunkText, pageChunkIndex) => {
+    pageChunks.forEach((chunkText) => {
       chunks.push({
         pageNumber: page.pageNumber,
         chunkIndex: chunks.length,

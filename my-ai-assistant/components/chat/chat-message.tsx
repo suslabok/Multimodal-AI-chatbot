@@ -3,19 +3,32 @@
 import { Bot, Sparkles } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ChatImagePreview } from "./chat-image-preview"
+import { ChatAttachmentPreview } from "./chat-image-preview"
 import type { ChatMessage as ChatMessageType } from "./mock-data"
 
 function UserMessage({ message }: { message: ChatMessageType }) {
+  const attachment = message.attachment
+
   return (
     <div className="flex items-end justify-end gap-3">
       <div className="max-w-[min(100%,42rem)] rounded-[28px] rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground shadow-lg shadow-black/10">
         <div className="space-y-3">
-          {message.image ? (
-            <ChatImagePreview
-              src={message.image.dataUrl}
-              alt={message.image.name}
-              title={message.image.name}
+          {attachment ? (
+            <ChatAttachmentPreview
+              kind={attachment.kind}
+              src={attachment.dataUrl}
+              alt={attachment.name}
+              title={attachment.name}
+              status={attachment.status}
+              statusMessage={
+                attachment.kind === "pdf"
+                  ? attachment.status === "processing"
+                    ? "Processing..."
+                    : attachment.status === "error"
+                      ? attachment.errorMessage ?? "Upload failed"
+                      : `Ready${attachment.pageCount ? ` · ${attachment.pageCount} pages` : ""}`
+                  : "Image ready"
+              }
             />
           ) : null}
           {message.content ? (

@@ -6,8 +6,6 @@ import { prisma } from "@/lib/server/db/prisma"
 import { formatVector } from "./embeddings"
 import type { RetrievedDocumentChunk } from "./types"
 
-const embeddingDimensions = 1536
-
 async function searchDocumentChunks({
   conversationId,
   userId,
@@ -29,13 +27,13 @@ async function searchDocumentChunks({
       dc."pageNumber",
       dc."chunkIndex",
       dc."text",
-      1 - (dc."embedding" <=> CAST(${vectorLiteral} AS vector(${embeddingDimensions}))) AS "similarity"
+      1 - (dc."embedding" <=> CAST(${vectorLiteral} AS vector(1536))) AS "similarity"
     FROM "DocumentChunk" dc
     INNER JOIN "UploadedFile" uf ON uf."id" = dc."uploadedFileId"
     WHERE dc."conversationId" = ${conversationId}
       AND dc."userId" = ${userId}
       AND uf."status" = 'READY'
-    ORDER BY dc."embedding" <=> CAST(${vectorLiteral} AS vector(${embeddingDimensions}))
+    ORDER BY dc."embedding" <=> CAST(${vectorLiteral} AS vector(1536))
     LIMIT ${topK}
   `)
 
