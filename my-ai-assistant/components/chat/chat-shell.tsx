@@ -1,0 +1,219 @@
+"use client"
+
+import { Menu, MessageSquareText, Plus } from "lucide-react"
+import * as React from "react"
+
+import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/theme/theme-toggle"
+import {
+  initialConversations,
+  type ChatMessage,
+  type Conversation,
+} from "./mock-data"
+import { ChatComposer } from "./chat-composer"
+import { ChatMessageList } from "./chat-message-list"
+import { ChatSidebar } from "./chat-sidebar"
+
+function ChatShell() {
+  const [conversations, setConversations] = React.useState(initialConversations)
+  const [activeConversationId, setActiveConversationId] = React.useState(
+    initialConversations[0]?.id ?? ""
+  )
+  const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  const [draft, setDraft] = React.useState("")
+  const [isSending, setIsSending] = React.useState(false)
+
+  const activeConversation = conversations.find(
+    (conversation) => conversation.id === activeConversationId
+  )
+
+  const updateConversation = React.useCallback(
+    (conversationId: string, updater: (conversation: Conversation) => Conversation) => {
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === conversationId ? updater(conversation) : conversation
+        )
+      )
+    },
+    []
+  )
+
+  const handleNewChat = React.useCallback(() => {
+    const id = `conv-${crypto.randomUUID()}`
+    const newConversation: Conversation = {
+      id,
+      title: "New chat",
+      preview: "Fresh thread ready for a prompt.",
+      updatedAt: "Just now",
+      messages: [],
+    }
+
+    setConversations((current) => [newConversation, ...current])
+    setActiveConversationId(id)
+    setDraft("")
+    setSidebarOpen(false)
+  }, [])
+
+  const handleSelectConversation = React.useCallback((conversationId: string) => {
+    setActiveConversationId(conversationId)
+    setSidebarOpen(false)
+  }, [])
+
+  const createAssistantReply = React.useCallback((prompt: string) => {
+    const normalizedPrompt = prompt.toLowerCase()
+
+    if (normalizedPrompt.includes("roadmap") || normalizedPrompt.includes("phase")) {
+      return "For Phase 1, keep the scope tight: reusable layout, mock state, responsive navigation, and polished presentation."
+    }
+
+    if (normalizedPrompt.includes("mobile") || normalizedPrompt.includes("responsive")) {
+      return "A mobile-first sidebar overlay and a sticky composer keep the experience usable on smaller screens."
+    }
+
+    if (normalizedPrompt.includes("theme") || normalizedPrompt.includes("dark")) {
+      return "A single theme provider can switch the whole shell without adding any backend dependency."
+    }
+
+    return "That works. This mock response is here so you can see the message flow before any AI integration is added."
+  }, [])
+
+  const handleSend = React.useCallback(() => {
+    const trimmed = draft.trim()
+
+    if (!trimmed || !activeConversation) {
+      return
+    }
+
+    const userMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    }
+
+    const assistantMessage: ChatMessage = {
+      id: `msg-${Date.now() + 1}`,
+      role: "assistant",
+      content: createAssistantReply(trimmed),
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    }
+
+    setIsSending(true)
+    setDraft("")
+
+    updateConversation(activeConversation.id, (conversation) => ({
+      ...conversation,
+      title: conversation.title === "New chat" ? trimmed.slice(0, 42) : conversation.title,
+      preview: trimmed,
+      updatedAt: "Just now",
+      messages: [...conversation.messages, userMessage],
+    }))
+
+    window.setTimeout(() => {
+      updateConversation(activeConversation.id, (conversation) => ({
+        ...conversation,
+        preview: assistantMessage.content,
+        updatedAt: "Just now",
+        messages: [...conversation.messages, assistantMessage],
+      }))
+      setIsSending(false)
+    }, 650)
+  }, [activeConversation, createAssistantReply, draft, updateConversation])
+
+  const handlePromptSelect = React.useCallback(
+    (prompt: string) => {
+      setDraft(prompt)
+    },
+    []
+  )
+
+  const displayedMessages = activeConversation?.messages ?? []
+  const activeTitle = activeConversation?.title ?? "Chat"
+
+  return (
+    <div className="relative min-h-dvh overflow-hidden bg-[radial-gradient(circle_at_top_left,var(--primary)/8%,transparent_30%),radial-gradient(circle_at_top_right,var(--foreground)/6%,transparent_28%),linear-gradient(to_bottom,var(--background),color-mix(in_oklch,var(--background)_92%,var(--foreground)_8%))] text-foreground">
+      <div className="absolute inset-x-0 top-0 h-80 bg-[linear-gradient(180deg,color-mix(in_oklch,var(--primary)_16%,transparent),transparent)] opacity-70" />
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-[1600px] gap-0 px-3 py-3 sm:px-4 lg:px-5">
+        <ChatSidebar
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onNewChat={handleNewChat}
+          onSelectConversation={handleSelectConversation}
+        />
+
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[36px] border border-border/70 bg-card/65 shadow-[0_24px_80px_rgba(0,0,0,0.12)] backdrop-blur-2xl">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setSidebarOpen(true)}
+                className="rounded-full border-border/70 bg-background/80 md:hidden"
+                aria-label="Open sidebar"
+              >
+                <Menu className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={handleNewChat}
+                className="hidden rounded-full border-border/70 bg-background/80 md:inline-flex"
+                aria-label="Start a new chat"
+              >
+                <Plus className="size-4" />
+              </Button>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {activeTitle}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Mock chat workspace · no API connected
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="hidden items-center gap-2 rounded-full border border-border/70 bg-background/75 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
+                <MessageSquareText className="size-3.5" />
+                {displayedMessages.length} messages
+              </div>
+              <ThemeToggle />
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-3 sm:p-4 lg:p-5">
+            <section className="min-h-0 flex-1">
+              <ChatMessageList
+                messages={displayedMessages}
+                onPromptSelect={handlePromptSelect}
+              />
+            </section>
+
+            <section className="pb-1">
+              <ChatComposer
+                value={draft}
+                onChange={setDraft}
+                onSubmit={handleSend}
+                isSending={isSending}
+              />
+            </section>
+          </div>
+
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background/70 to-transparent" />
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export { ChatShell }
