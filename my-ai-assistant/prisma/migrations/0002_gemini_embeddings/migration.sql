@@ -1,0 +1,4 @@
+TRUNCATE TABLE "DocumentChunk";
+
+ALTER TABLE "DocumentChunk"
+  ALTER COLUMN "embedding" TYPE vector(768);

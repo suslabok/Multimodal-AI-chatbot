@@ -3,7 +3,7 @@ import "server-only"
 import { generateEmbedding } from "./embeddings"
 import { searchDocumentChunks } from "./vector-search"
 
-const relevanceThreshold = 0.35
+const relevanceThreshold = 0.2
 
 async function retrieveDocumentContext({
   conversationId,

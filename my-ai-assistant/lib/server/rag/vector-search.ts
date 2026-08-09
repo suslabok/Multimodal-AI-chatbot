@@ -27,13 +27,13 @@ async function searchDocumentChunks({
       dc."pageNumber",
       dc."chunkIndex",
       dc."text",
-      1 - (dc."embedding" <=> CAST(${vectorLiteral} AS vector(1536))) AS "similarity"
+      1 - (dc."embedding" <=> CAST(${vectorLiteral} AS vector(768))) AS "similarity"
     FROM "DocumentChunk" dc
     INNER JOIN "UploadedFile" uf ON uf."id" = dc."uploadedFileId"
     WHERE dc."conversationId" = ${conversationId}
       AND dc."userId" = ${userId}
       AND uf."status" = 'READY'
-    ORDER BY dc."embedding" <=> CAST(${vectorLiteral} AS vector(1536))
+    ORDER BY dc."embedding" <=> CAST(${vectorLiteral} AS vector(768))
     LIMIT ${topK}
   `)
 

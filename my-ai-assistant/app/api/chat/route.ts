@@ -1,12 +1,13 @@
-import { createOpenAI } from "@ai-sdk/openai"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { streamText, type ModelMessage } from "ai"
 
+import { prisma } from "@/lib/server/db/prisma"
 import { ensureConversationExists } from "@/lib/server/rag/upsert-uploaded-file"
 import { retrieveDocumentContext } from "@/lib/server/rag/document-retrieval"
 
 type ChatRequestMessage = ModelMessage
 
-const openai = createOpenAI({
+const google = createGoogleGenerativeAI({
   apiKey: process.env.AI_API_KEY,
 })
 
@@ -53,7 +54,18 @@ export async function POST(request: Request) {
     await ensureConversationExists(conversationId)
   }
 
-  if (conversationId && latestQuestion) {
+  // Only take the RAG path if this conversation actually has a PDF that
+  // finished processing. Otherwise every plain text/image chat would be
+  // routed through document retrieval and get a "not found in document"
+  // reply even though no document was ever uploaded.
+  const hasReadyDocument =
+    conversationId.length > 0
+      ? (await prisma.uploadedFile.count({
+          where: { conversationId, status: "READY" },
+        })) > 0
+      : false
+
+  if (conversationId && latestQuestion && hasReadyDocument) {
     try {
       const context = await retrieveDocumentContext({
         conversationId,
@@ -70,14 +82,16 @@ export async function POST(request: Request) {
       }
 
       const result = streamText({
-        model: openai("gpt-4o-mini"),
+        model: google("gemini-3.5-flash-lite"),
         instructions: [
-          "You are the Multimodal AI Assistant. Be concise, helpful, and friendly.",
-          "Answer the user's question using only the retrieved PDF context below.",
-          "If the context does not contain the answer, say exactly: I couldn't find this information in the uploaded document.",
-          context.sources.length > 0 ? `Sources:\n${context.sources.map((source) => `- ${source}`).join("\n")}` : "",
-          `Retrieved context:\n${context.context}`,
-        ]
+  "You are the Multimodal AI Assistant.",
+  "Answer the user's question using only the retrieved PDF context below.",
+  "Be specific and detailed: pull concrete facts, numbers, names, and wording directly from the context rather than giving a vague summary. Synthesize across multiple excerpts if they're related.",
+  "Write in full sentences with enough detail to be genuinely useful, not just a one-line answer.",
+  "If the context does not contain the answer, say exactly: I couldn't find this information in the uploaded document.",
+  context.sources.length > 0 ? `Sources:\n${context.sources.map((source) => `- ${source}`).join("\n")}` : "",
+  `Retrieved context:\n${context.context}`,
+]
           .filter(Boolean)
           .join("\n\n"),
         messages,
@@ -90,7 +104,7 @@ export async function POST(request: Request) {
   }
 
   const result = streamText({
-    model: openai("gpt-4o-mini"),
+    model: google("gemini-3.5-flash-lite"),
     instructions:
       "You are the Multimodal AI Assistant. Be concise, helpful, and friendly. If the user provides an image, analyze it directly and answer the user's question about the image.",
     messages,

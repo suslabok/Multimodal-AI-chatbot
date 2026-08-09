@@ -37,6 +37,120 @@ function ChatComposer({
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null)
+  const audioChunksRef = React.useRef<Blob[]>([])
+  const streamRef = React.useRef<MediaStream | null>(null)
+
+  const [isRecording, setIsRecording] = React.useState(false)
+  const [isTranscribing, setIsTranscribing] = React.useState(false)
+  const [voiceError, setVoiceError] = React.useState<string | null>(null)
+
+  const stopStream = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+  }
+
+  const startRecording = async () => {
+    setVoiceError(null)
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setVoiceError("Voice input isn't supported in this browser.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+
+      const recorder = new MediaRecorder(stream)
+      audioChunksRef.current = []
+
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      })
+
+      recorder.addEventListener("stop", () => {
+        stopStream()
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        })
+        void transcribeAudio(audioBlob)
+      })
+
+      mediaRecorderRef.current = recorder
+      recorder.start()
+      setIsRecording(true)
+    } catch {
+      setVoiceError("Microphone access was denied or unavailable.")
+      stopStream()
+    }
+  }
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop()
+    mediaRecorderRef.current = null
+    setIsRecording(false)
+  }
+
+  const handleMicClick = () => {
+    if (isRecording) {
+      stopRecording()
+      return
+    }
+
+    void startRecording()
+  }
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+    if (audioBlob.size === 0) {
+      setVoiceError("The recording was empty. Try again.")
+      return
+    }
+
+    setIsTranscribing(true)
+    setVoiceError(null)
+
+    try {
+      const body = new FormData()
+      body.append("audio", audioBlob, "recording.webm")
+
+      const response = await fetch("/api/speech-to-text", {
+        method: "POST",
+        body,
+      })
+
+      const data = (await response.json()) as { transcript?: string; error?: string }
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Unable to transcribe this recording.")
+      }
+
+      const transcript = data.transcript?.trim()
+
+      if (!transcript) {
+        setVoiceError("Didn't catch that - try speaking again.")
+        return
+      }
+
+      onChange(value.trim() ? `${value.trim()} ${transcript}` : transcript)
+      textareaRef.current?.focus()
+    } catch (error) {
+      setVoiceError(
+        error instanceof Error ? error.message : "Unable to transcribe this recording."
+      )
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
+  React.useEffect(() => {
+    return () => {
+      mediaRecorderRef.current?.stop()
+      stopStream()
+    }
+  }, [])
 
   const handleFileClick = () => {
     fileInputRef.current?.click()
@@ -125,11 +239,23 @@ function ChatComposer({
           </p>
         ) : null}
 
+        {voiceError ? (
+          <p className="rounded-2xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {voiceError}
+          </p>
+        ) : null}
+
         <Textarea
           ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Message the assistant..."
+          placeholder={
+            isRecording
+              ? "Listening... click the mic again to stop"
+              : isTranscribing
+                ? "Transcribing your recording..."
+                : "Message the assistant..."
+          }
           rows={1}
           className={cn(
             "min-h-14 resize-none rounded-[24px] border-border/70 bg-background/80 px-4 py-3 text-[15px] leading-6 shadow-inner shadow-black/5"
@@ -167,9 +293,13 @@ function ChatComposer({
               type="button"
               variant="outline"
               size="icon-sm"
-              className="rounded-full border-border/70 bg-background/80"
-              aria-label="Use microphone"
-              disabled={isSending || isUploadingAttachment}
+              className={cn(
+                "rounded-full border-border/70 bg-background/80",
+                isRecording && "border-destructive/50 bg-destructive/10 text-destructive animate-pulse"
+              )}
+              aria-label={isRecording ? "Stop recording" : "Use microphone"}
+              onClick={handleMicClick}
+              disabled={isSending || isUploadingAttachment || isTranscribing}
             >
               <Mic className="size-4" />
             </Button>

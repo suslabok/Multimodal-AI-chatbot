@@ -47,50 +47,54 @@ export async function POST(request: Request) {
       const chunks = chunkExtractedPdfPages(extracted.pages)
       const embeddings = await generateEmbeddings(chunks.map((chunk) => chunk.text))
 
-      await prisma.$transaction(async (tx) => {
-        await tx.uploadedFile.update({
-          where: { id: uploadedFile.id },
-          data: {
-            status: "READY",
-            pageCount: extracted.pageCount,
-            extractedText: extracted.extractedText,
-            errorMessage: null,
-          },
-        })
-
-        for (let index = 0; index < chunks.length; index += 1) {
-          const chunk = chunks[index]
-          const embedding = embeddings[index]
-
-          if (!embedding) {
-            throw new Error("Failed to generate an embedding for a PDF chunk.")
-          }
-
-          await tx.$executeRaw(Prisma.sql`
-            INSERT INTO "DocumentChunk" (
-              "id",
-              "uploadedFileId",
-              "conversationId",
-              "userId",
-              "pageNumber",
-              "chunkIndex",
-              "text",
-              "embedding",
-              "createdAt"
-            ) VALUES (
-              ${crypto.randomUUID()},
-              ${uploadedFile.id},
-              ${conversationId},
-              ${"anonymous"},
-              ${chunk.pageNumber},
-              ${chunk.chunkIndex},
-              ${chunk.text},
-              CAST(${formatVector(embedding)} AS vector(1536)),
-              ${new Date()}
-            )
-          `)
-        }
+      await prisma.uploadedFile.update({
+        where: { id: uploadedFile.id },
+        data: {
+          status: "READY",
+          pageCount: extracted.pageCount,
+          extractedText: extracted.extractedText,
+          errorMessage: null,
+        },
       })
+
+      // Build one multi-row INSERT instead of looping many individual
+      // $executeRaw calls inside an interactive transaction. Neon's pooled
+      // connection uses PgBouncer in transaction-pooling mode, which can
+      // drop/reassign the underlying connection mid-transaction if it runs
+      // long - a single statement avoids that entirely and is much faster.
+      const rows = chunks.map((chunk, index) => {
+        const embedding = embeddings[index]
+
+        if (!embedding) {
+          throw new Error("Failed to generate an embedding for a PDF chunk.")
+        }
+
+        return Prisma.sql`(
+          ${crypto.randomUUID()},
+          ${uploadedFile.id},
+          ${conversationId},
+          ${"anonymous"},
+          ${chunk.pageNumber},
+          ${chunk.chunkIndex},
+          ${chunk.text},
+          CAST(${formatVector(embedding)} AS vector(768)),
+          ${new Date()}
+        )`
+      })
+
+      await prisma.$executeRaw(Prisma.sql`
+        INSERT INTO "DocumentChunk" (
+          "id",
+          "uploadedFileId",
+          "conversationId",
+          "userId",
+          "pageNumber",
+          "chunkIndex",
+          "text",
+          "embedding",
+          "createdAt"
+        ) VALUES ${Prisma.join(rows)}
+      `)
 
       return Response.json(
         {
