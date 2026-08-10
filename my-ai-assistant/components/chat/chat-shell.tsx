@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
 import {
   type ChatAttachment,
-  initialConversations,
   type ChatMessage,
   type Conversation,
 } from "./mock-data"
@@ -60,10 +59,8 @@ function toRequestMessage(message: ChatMessage): ChatRequestMessage | null {
 }
 
 function ChatShell() {
-  const [conversations, setConversations] = React.useState(initialConversations)
-  const [activeConversationId, setActiveConversationId] = React.useState(
-    initialConversations[0]?.id ?? ""
-  )
+ const [conversations, setConversations] = React.useState<Conversation[]>([])
+  const [activeConversationId, setActiveConversationId] = React.useState("")
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [draft, setDraft] = React.useState("")
   const [selectedAttachment, setSelectedAttachment] = React.useState<ChatAttachment | null>(null)
@@ -76,6 +73,86 @@ function ChatShell() {
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId
   )
+  React.useEffect(() => {
+    let cancelled = false
+
+    const loadHistory = async () => {
+      const createEmptyConversation = (): Conversation => ({
+        id: `conv-${crypto.randomUUID()}`,
+        title: "New chat",
+        preview: "Fresh thread ready for a prompt.",
+        updatedAt: "Just now",
+        messages: [],
+      })
+
+      try {
+        const response = await fetch("/api/conversations")
+
+        if (!response.ok) {
+          throw new Error("Unable to load conversation history.")
+        }
+
+        const data = (await response.json()) as {
+          conversations: Array<{
+            id: string
+            title: string
+            preview: string
+            updatedAt: string
+            messages: Array<{
+              id: string
+              role: "user" | "assistant"
+              content: string
+              createdAt: string
+              attachment?: ChatAttachment
+            }>
+          }>
+        }
+
+        if (cancelled) return
+
+        const formatTime = (iso: string) =>
+          new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+
+        const loaded: Conversation[] = data.conversations.map((conversation) => ({
+          id: conversation.id,
+          title: conversation.title,
+          preview: conversation.preview,
+          updatedAt: new Date(conversation.updatedAt).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          }),
+          messages: conversation.messages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            time: formatTime(message.createdAt),
+            attachment: message.attachment,
+          })),
+        }))
+
+        if (loaded.length > 0) {
+          setConversations(loaded)
+          setActiveConversationId(loaded[0].id)
+        } else {
+          const fresh = createEmptyConversation()
+          setConversations([fresh])
+          setActiveConversationId(fresh.id)
+        }
+      } catch {
+        if (!cancelled) {
+          const fresh = createEmptyConversation()
+          setConversations([fresh])
+          setActiveConversationId(fresh.id)
+        }
+      }
+    }
+
+    void loadHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const fileToDataUrl = React.useCallback((file: File) => {
     return new Promise<string>((resolve, reject) => {

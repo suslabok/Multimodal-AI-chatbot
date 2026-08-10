@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { streamText, type ModelMessage } from "ai"
 
+import { auth } from "@/lib/server/auth/auth"
 import { prisma } from "@/lib/server/db/prisma"
 import { ensureConversationExists } from "@/lib/server/rag/upsert-uploaded-file"
 import { retrieveDocumentContext } from "@/lib/server/rag/document-retrieval"
@@ -33,12 +34,30 @@ function getLatestUserQuestion(messages: ChatRequestMessage[]) {
   return ""
 }
 
+function getLatestUserAttachment(messages: ChatRequestMessage[]) {
+  const lastMessage = messages[messages.length - 1]
+
+  if (!lastMessage || lastMessage.role !== "user" || typeof lastMessage.content === "string") {
+    return null
+  }
+
+  const filePart = lastMessage.content.find((part) => part.type === "file")
+  return filePart ?? null
+}
+
 export async function POST(request: Request) {
   if (!process.env.AI_API_KEY) {
     return Response.json(
       { error: "Missing AI_API_KEY environment variable." },
       { status: 500 }
     )
+  }
+
+  const session = await auth()
+  const userId = session?.user?.id
+
+  if (!userId) {
+    return Response.json({ error: "You must be signed in to chat." }, { status: 401 })
   }
 
   const body = (await request.json()) as {
@@ -49,9 +68,38 @@ export async function POST(request: Request) {
   const messages = body.messages ?? []
   const conversationId = body.conversationId?.trim() || ""
   const latestQuestion = getLatestUserQuestion(messages)
+  const latestAttachment = getLatestUserAttachment(messages)
 
   if (conversationId) {
-    await ensureConversationExists(conversationId)
+    await ensureConversationExists(conversationId, userId)
+
+    if (latestQuestion || latestAttachment) {
+      await prisma.message.create({
+        data: {
+          conversationId,
+          userId,
+          role: "USER",
+          content: latestQuestion,
+          attachmentKind: latestAttachment ? "image" : null,
+          attachmentMimeType: latestAttachment ? latestAttachment.mediaType : null,
+        },
+      })
+    }
+  }
+
+  const saveAssistantMessage = async (text: string) => {
+    if (!conversationId || !text) {
+      return
+    }
+
+    await prisma.message.create({
+      data: {
+        conversationId,
+        userId,
+        role: "ASSISTANT",
+        content: text,
+      },
+    })
   }
 
   // Only take the RAG path if this conversation actually has a PDF that
@@ -70,11 +118,14 @@ export async function POST(request: Request) {
       const context = await retrieveDocumentContext({
         conversationId,
         question: latestQuestion,
-        userId: "anonymous",
+        userId,
       })
 
       if (!context.found) {
-        return new Response("I couldn't find this information in the uploaded document.", {
+        const fallbackText = "I couldn't find this information in the uploaded document."
+        await saveAssistantMessage(fallbackText)
+
+        return new Response(fallbackText, {
           headers: {
             "Content-Type": "text/plain; charset=utf-8",
           },
@@ -82,19 +133,22 @@ export async function POST(request: Request) {
       }
 
       const result = streamText({
-        model: google("gemini-3.5-flash-lite"),
+        model: google("gemini-3.5-flash"),
         instructions: [
-  "You are the Multimodal AI Assistant.",
-  "Answer the user's question using only the retrieved PDF context below.",
-  "Be specific and detailed: pull concrete facts, numbers, names, and wording directly from the context rather than giving a vague summary. Synthesize across multiple excerpts if they're related.",
-  "Write in full sentences with enough detail to be genuinely useful, not just a one-line answer.",
-  "If the context does not contain the answer, say exactly: I couldn't find this information in the uploaded document.",
-  context.sources.length > 0 ? `Sources:\n${context.sources.map((source) => `- ${source}`).join("\n")}` : "",
-  `Retrieved context:\n${context.context}`,
-]
+          "You are the Multimodal AI Assistant.",
+          "Answer the user's question using only the retrieved PDF context below.",
+          "Be specific and detailed: pull concrete facts, numbers, names, and wording directly from the context rather than giving a vague summary. Synthesize across multiple excerpts if they're related.",
+          "Write in full sentences with enough detail to be genuinely useful, not just a one-line answer.",
+          "If the context does not contain the answer, say exactly: I couldn't find this information in the uploaded document.",
+          context.sources.length > 0 ? `Sources:\n${context.sources.map((source) => `- ${source}`).join("\n")}` : "",
+          `Retrieved context:\n${context.context}`,
+        ]
           .filter(Boolean)
           .join("\n\n"),
         messages,
+        onFinish: async ({ text }) => {
+          await saveAssistantMessage(text)
+        },
       })
 
       return result.toTextStreamResponse()
@@ -104,10 +158,13 @@ export async function POST(request: Request) {
   }
 
   const result = streamText({
-    model: google("gemini-3.5-flash-lite"),
+    model: google("gemini-3.5-flash"),
     instructions:
       "You are the Multimodal AI Assistant. Be concise, helpful, and friendly. If the user provides an image, analyze it directly and answer the user's question about the image.",
     messages,
+    onFinish: async ({ text }) => {
+      await saveAssistantMessage(text)
+    },
   })
 
   return result.toTextStreamResponse()
