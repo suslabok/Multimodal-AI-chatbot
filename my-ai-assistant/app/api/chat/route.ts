@@ -3,7 +3,7 @@ import { streamText, type ModelMessage } from "ai"
 
 import { auth } from "@/lib/server/auth/auth"
 import { prisma } from "@/lib/server/db/prisma"
-import { ensureConversationExists } from "@/lib/server/rag/upsert-uploaded-file"
+import { ConversationAccessDeniedError, ensureConversationExists } from "@/lib/server/rag/upsert-uploaded-file"
 import { retrieveDocumentContext } from "@/lib/server/rag/document-retrieval"
 
 type ChatRequestMessage = ModelMessage
@@ -70,8 +70,16 @@ export async function POST(request: Request) {
   const latestQuestion = getLatestUserQuestion(messages)
   const latestAttachment = getLatestUserAttachment(messages)
 
-  if (conversationId) {
-    await ensureConversationExists(conversationId, userId)
+if (conversationId) {
+    try {
+      await ensureConversationExists(conversationId, userId)
+    } catch (error) {
+      if (error instanceof ConversationAccessDeniedError) {
+        return Response.json({ error: error.message }, { status: 403 })
+      }
+
+      throw error
+    }
 
     if (latestQuestion || latestAttachment) {
       await prisma.message.create({
@@ -109,7 +117,7 @@ export async function POST(request: Request) {
   const hasReadyDocument =
     conversationId.length > 0
       ? (await prisma.uploadedFile.count({
-          where: { conversationId, status: "READY" },
+      where: { conversationId, userId, status: "READY" },
         })) > 0
       : false
 

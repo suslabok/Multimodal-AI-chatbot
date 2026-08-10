@@ -1,7 +1,9 @@
 "use client"
 
-import { ArrowRight, MessageSquarePlus, Search } from "lucide-react"
+import { ArrowRight, LogOut, MessageSquarePlus, Search } from "lucide-react"
+import { signOut, useSession } from "next-auth/react"
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -106,6 +108,8 @@ function ChatSidebar({
               </div>
             </div>
           </ScrollArea>
+
+          <UserAccountBlock />
         </div>
       </aside>
 
@@ -119,6 +123,44 @@ function ChatSidebar({
         )}
       />
     </>
+  )
+}
+
+function UserAccountBlock() {
+  const { data: session } = useSession()
+  const user = session?.user
+
+  const initials =
+    user?.name
+      ?.split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() ?? "?"
+
+  return (
+    <div className="flex items-center gap-3 rounded-[22px] border border-border/70 bg-card/70 p-3 shadow-sm">
+      <Avatar size="sm">
+        {user?.image ? <AvatarImage src={user.image} alt={user.name ?? "User"} /> : null}
+        <AvatarFallback>{initials}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">
+          {user?.name ?? "Signed in"}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">{user?.email ?? ""}</p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        className="rounded-full border-border/70 bg-background/80"
+        aria-label="Sign out"
+        onClick={() => signOut({ redirectTo: "/sign-in" })}
+      >
+        <LogOut className="size-4" />
+      </Button>
+    </div>
   )
 }
 

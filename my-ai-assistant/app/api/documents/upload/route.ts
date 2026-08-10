@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/server/db/prisma"
-import { ensureConversationExists } from "@/lib/server/rag/upsert-uploaded-file"
+import { ConversationAccessDeniedError, ensureConversationExists } from "@/lib/server/rag/upsert-uploaded-file"
 import { extractPdfPages } from "@/lib/server/rag/pdf-processing"
 import { chunkExtractedPdfPages } from "@/lib/server/rag/text-chunking"
 import { generateEmbeddings, formatVector } from "@/lib/server/rag/embeddings"
@@ -30,7 +30,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "PDF files must be smaller than 20 MB." }, { status: 413 })
     }
 
-    await ensureConversationExists(conversationId)
+try {
+      await ensureConversationExists(conversationId, userId)
+    } catch (error) {
+      if (error instanceof ConversationAccessDeniedError) {
+        return Response.json({ error: error.message }, { status: 403 })
+      }
+
+      throw error
+    }
 
     const uploadedFile = await prisma.uploadedFile.create({
       data: {
