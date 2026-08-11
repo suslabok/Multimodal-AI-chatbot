@@ -563,9 +563,7 @@ function ChatShell() {
                 <p className="truncate text-sm font-medium text-foreground">
                   {activeTitle}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Mock chat workspace · no API connected
-                </p>
+                
               </div>
             </div>
 
