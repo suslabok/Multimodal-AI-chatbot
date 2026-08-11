@@ -2,6 +2,8 @@
 
 import { Bot, Loader2, Sparkles, Volume2, VolumeX } from "lucide-react"
 import * as React from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -119,7 +121,7 @@ function AssistantMessage({ message }: { message: ChatMessageType }) {
   return (
     <div className="flex items-end gap-3">
       <Avatar size="sm" className="hidden ring-1 ring-border md:flex">
-        <AvatarFallback className="bg-foreground text-background">
+        <AvatarFallback className="bg-accent text-accent-foreground">
           <Bot className="size-3.5" />
         </AvatarFallback>
       </Avatar>

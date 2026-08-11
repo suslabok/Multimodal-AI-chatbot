@@ -39,7 +39,7 @@ function ChatSidebar({
                 <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
                   Multimodal AI Assistant
                 </p>
-                <h2 className="mt-1 text-lg font-semibold tracking-tight">
+                <h2 className="mt-1 font-heading text-lg font-medium tracking-tight">
                   Conversations
                 </h2>
               </div>
