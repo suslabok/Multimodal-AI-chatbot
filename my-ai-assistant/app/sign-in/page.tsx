@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { Button } from "@/components/ui/button"
 import { signIn } from "@/lib/server/auth/auth"
 
@@ -15,9 +14,6 @@ export default function SignInPage() {
       />
 
       <div className="relative flex flex-col items-center gap-3 text-center">
-        <div className="flex size-16 items-center justify-center">
-         <img src="/logo.png" alt="Logo" />
-        </div>
         <h1 className="font-heading text-2xl font-medium tracking-tight text-foreground">
           Multimodal AI Assistant
         </h1>
