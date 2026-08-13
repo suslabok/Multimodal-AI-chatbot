@@ -219,7 +219,7 @@ function ChatComposer({
   }, [value])
 
   return (
-    <div className="rounded-[32px] border border-border/70 bg-background/85 p-3 shadow-lg shadow-black/5 backdrop-blur-xl sm:p-4">
+    <div className="rounded-[32px] border border-border bg-card/90 p-3 shadow-lg shadow-primary/5 backdrop-blur-xl sm:p-4">
       <div className="flex flex-col gap-3">
         {attachment ? (
           <ChatAttachmentPreview
@@ -258,7 +258,7 @@ function ChatComposer({
           }
           rows={1}
           className={cn(
-            "min-h-14 resize-none rounded-[24px] border-border/70 bg-background/80 px-4 py-3 text-[15px] leading-6 shadow-inner shadow-black/5"
+            "min-h-14 resize-none rounded-[24px] border-border bg-background px-4 py-3 text-[15px] leading-6 shadow-inner shadow-black/5 focus-visible:border-primary/40 focus-visible:ring-primary/20"
           )}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -282,7 +282,7 @@ function ChatComposer({
               type="button"
               variant="outline"
               size="icon-sm"
-              className="rounded-full border-border/70 bg-background/80"
+              className="rounded-full border-border bg-background hover:border-primary/30 hover:bg-accent hover:text-accent-foreground"
               aria-label="Attach file"
               onClick={handleFileClick}
               disabled={isSending || isUploadingAttachment}
@@ -294,8 +294,8 @@ function ChatComposer({
               variant="outline"
               size="icon-sm"
               className={cn(
-                "rounded-full border-border/70 bg-background/80",
-                isRecording && "border-destructive/50 bg-destructive/10 text-destructive animate-pulse"
+                "rounded-full border-border bg-background hover:border-primary/30 hover:bg-accent hover:text-accent-foreground",
+                isRecording && "border-destructive/50 bg-destructive/10 text-destructive animate-pulse hover:bg-destructive/10 hover:text-destructive"
               )}
               aria-label={isRecording ? "Stop recording" : "Use microphone"}
               onClick={handleMicClick}

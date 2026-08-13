@@ -33,10 +33,11 @@ function ChatSidebar({
         )}
       >
         <div className="flex h-full flex-col gap-4 p-4 md:p-5">
-          <div className="rounded-[28px] border border-border/70 bg-card/80 p-4 shadow-sm">
+          <div className="rounded-[28px] border border-border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.24em] text-primary">
+  
                   Multimodal AI Assistant
                 </p>
                 <h2 className="mt-1 font-heading text-lg font-medium tracking-tight">
@@ -62,18 +63,14 @@ function ChatSidebar({
               <MessageSquarePlus className="size-4" />
               New Chat
             </Button>
-            <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-2 text-sm text-muted-foreground">
-              <Search className="size-4" />
-              Search conversations
-            </div>
           </div>
 
-          <ScrollArea className="flex-1 rounded-[28px] border border-border/70 bg-card/70 shadow-sm">
+          <ScrollArea className="flex-1 rounded-[28px] border border-border bg-card/60 shadow-sm">
             <div className="p-3">
               <div className="mb-3 px-2 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 Recent chats
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {conversations.map((conversation) => {
                   const isActive = conversation.id === activeConversationId
 
@@ -83,9 +80,9 @@ function ChatSidebar({
                       type="button"
                       onClick={() => onSelectConversation(conversation.id)}
                       className={cn(
-                        "w-full rounded-[22px] border px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-border hover:bg-background/80",
+                        "w-full rounded-[22px] border px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/20 hover:bg-accent/60",
                         isActive
-                          ? "border-primary/30 bg-primary/10 shadow-sm dark:bg-primary/15"
+                          ? "border-primary/30 bg-primary/10 shadow-sm"
                           : "border-transparent bg-background/50"
                       )}
                     >

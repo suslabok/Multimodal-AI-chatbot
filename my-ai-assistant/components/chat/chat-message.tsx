@@ -1,12 +1,13 @@
 "use client"
 
-import { Bot, Loader2, Sparkles, Volume2, VolumeX } from "lucide-react"
+import { Loader2, Sparkles, Volume2, VolumeX } from "lucide-react"
 import * as React from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { ChatAttachmentPreview } from "./chat-image-preview"
 import type { ChatMessage as ChatMessageType } from "./mock-data"
 
@@ -121,11 +122,10 @@ function AssistantMessage({ message }: { message: ChatMessageType }) {
   return (
     <div className="flex items-end gap-3">
       <Avatar size="sm" className="hidden ring-1 ring-border md:flex">
-        <AvatarFallback className="bg-accent text-accent-foreground">
-          <Bot className="size-3.5" />
-        </AvatarFallback>
+        <AvatarImage src="/logo.png" alt="Assistant" />
+        <AvatarFallback className="bg-accent text-accent-foreground">AI</AvatarFallback>
       </Avatar>
-      <div className="max-w-[min(100%,42rem)] rounded-[28px] rounded-bl-md border border-border/70 bg-background/90 px-4 py-3 text-sm leading-6 shadow-sm backdrop-blur-sm dark:bg-card/70">
+      <div className="max-w-[min(100%,42rem)] rounded-[28px] rounded-bl-md border border-border bg-card px-4 py-3 text-sm leading-6 shadow-sm">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Sparkles className="size-3.5" />
@@ -156,7 +156,25 @@ function AssistantMessage({ message }: { message: ChatMessageType }) {
             Generating response...
           </div>
         ) : null}
-        <p className="whitespace-pre-wrap text-foreground">{message.content}</p>
+        {message.content ? (
+          <div
+            className={cn(
+              "prose prose-sm max-w-none text-foreground",
+              "prose-headings:font-heading prose-headings:font-medium prose-headings:text-foreground",
+              "prose-p:my-2 prose-p:leading-6 first:prose-p:mt-0 last:prose-p:mb-0",
+              "prose-strong:text-foreground prose-strong:font-semibold",
+              "prose-a:text-primary prose-a:font-medium prose-a:underline-offset-4 hover:prose-a:text-primary/80",
+              "prose-code:rounded-md prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[13px] prose-code:font-mono prose-code:before:content-none prose-code:after:content-none",
+              "prose-pre:rounded-2xl prose-pre:border prose-pre:border-border prose-pre:bg-muted prose-pre:text-foreground",
+              "prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5",
+              "prose-blockquote:border-l-primary/40 prose-blockquote:text-muted-foreground",
+              "prose-hr:border-border",
+              "prose-table:text-sm prose-th:border-border prose-td:border-border"
+            )}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
+        ) : null}
         {speechError ? (
           <p className="mt-2 text-[11px] text-destructive">{speechError}</p>
         ) : null}
