@@ -8,11 +8,11 @@ import { useTheme } from "./theme-provider"
 
 function ThemeToggle() {
   const { resolvedTheme, toggleTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
-
-  React.useEffect(() => {
-    setMounted(true)
-  }, [])
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
 
   // Until the page has loaded in the browser, assume light mode so the server
   // render and the first browser render match. Then switch to the real theme.
