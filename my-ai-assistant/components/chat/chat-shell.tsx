@@ -455,22 +455,21 @@ function ChatShell() {
             break
           }
 
-          assistantContent += decoder.decode(value, { stream: true })
+              assistantContent += decoder.decode()
 
-          updateConversation(activeConversation.id, (conversation) => ({
-            ...conversation,
-            preview: assistantContent || "Generating response...",
-            updatedAt: "Just now",
-            messages: conversation.messages.map((message) =>
-              message.id === assistantMessageId
-                ? {
-                    ...message,
-                    content: assistantContent,
-                    status: "streaming",
-                  }
-                : message
-            ),
-          }))
+        updateConversation(activeConversation.id, (conversation) => ({
+          ...conversation,
+          preview: assistantContent,
+          updatedAt: "Just now",
+          messages: conversation.messages.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: assistantContent,
+                }
+              : message
+          ),
+        }))
         }
 
         assistantContent += decoder.decode()
@@ -484,6 +483,7 @@ function ChatShell() {
               ? {
                   ...message,
                   content: assistantContent,
+                  status: undefined,
                 }
               : message
           ),

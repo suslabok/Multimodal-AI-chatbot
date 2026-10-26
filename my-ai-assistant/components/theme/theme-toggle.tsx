@@ -1,13 +1,22 @@
 "use client"
 
 import { MoonStar, SunMedium } from "lucide-react"
+import * as React from "react"
 
 import { Button } from "@/components/ui/button"
 import { useTheme } from "./theme-provider"
 
 function ThemeToggle() {
   const { resolvedTheme, toggleTheme } = useTheme()
-  const isDark = resolvedTheme === "dark"
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Until the page has loaded in the browser, assume light mode so the server
+  // render and the first browser render match. Then switch to the real theme.
+  const isDark = mounted && resolvedTheme === "dark"
 
   return (
     <Button
